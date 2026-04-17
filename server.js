@@ -9,6 +9,8 @@ const crypto       = require('crypto');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
+app.set('trust proxy', 1); // trust Railway's reverse proxy for secure cookies
+
 // ── Env ───────────────────────────────────────────────────────────────────────
 const DD_API_KEY         = process.env.DD_API_KEY;
 const DD_APP_KEY         = process.env.DD_APP_KEY;
