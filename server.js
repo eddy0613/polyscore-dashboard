@@ -35,9 +35,13 @@ passport.use(new GoogleStrategy(
   { clientID: GOOGLE_CLIENT_ID, clientSecret: GOOGLE_CLIENT_SECRET, callbackURL: CALLBACK_URL },
   (_accessToken, _refreshToken, profile, done) => {
     const email = profile.emails?.[0]?.value;
+    console.log('[OAuth] email received:', email);
     if (!email || (!email.endsWith('@poly-ai.com') && !email.endsWith('@polyai.com'))) {
+      console.log('[OAuth] REJECTED — not a PolyAI domain');
       return done(null, false, { message: 'not_polyai' });
     }
+    console.log('[OAuth] ACCEPTED');
+
     return done(null, { email, name: profile.displayName, avatar: profile.photos?.[0]?.value });
   }
 ));
