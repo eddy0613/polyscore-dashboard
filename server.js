@@ -117,7 +117,21 @@ app.post('/auth/logout', (req, res) => {
 });
 
 // ── Static files (protected) ──────────────────────────────────────────────────
-app.use(requireAuth, express.static(path.join(__dirname, 'public')));
+// Serve index.html explicitly so auth middleware runs (CDN must not cache it)
+app.get('/', requireAuth, (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Other static assets (JS, CSS, etc.) — no auth needed for assets
+app.use(express.static(path.join(__dirname, 'public'), {
+  index: false, // disable auto index.html serving
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+  },
+}));
 
 // ── API: /api/polyscores ──────────────────────────────────────────────────────
 app.get('/api/polyscores', requireAuth, async (req, res) => {
@@ -179,5 +193,11 @@ app.get('/api/polyscores', requireAuth, async (req, res) => {
 
 // ── API: /api/me ──────────────────────────────────────────────────────────────
 app.get('/api/me', requireAuth, (req, res) => res.json(req.user));
+
+// Catch-all: redirect unauthenticated to login
+app.use((req, res) => {
+  if (!req.isAuthenticated()) return res.redirect('/login');
+  res.status(404).send('Not found');
+});
 
 app.listen(PORT, () => console.log(`Polyscore dashboard on port ${PORT}`));
