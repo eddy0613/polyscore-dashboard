@@ -35,7 +35,7 @@ passport.use(new GoogleStrategy(
   { clientID: GOOGLE_CLIENT_ID, clientSecret: GOOGLE_CLIENT_SECRET, callbackURL: CALLBACK_URL },
   (_accessToken, _refreshToken, profile, done) => {
     const email = profile.emails?.[0]?.value;
-    if (!email || !email.endsWith('@poly-ai.com')) {
+    if (!email || (!email.endsWith('@poly-ai.com') && !email.endsWith('@polyai.com'))) {
       return done(null, false, { message: 'not_polyai' });
     }
     return done(null, { email, name: profile.displayName, avatar: profile.photos?.[0]?.value });
@@ -87,7 +87,7 @@ app.get('/login', (req, res) => {
   <div class="card">
     <div class="logo">⚡</div>
     <h1>Polyscore Dashboard</h1>
-    <p>Sign in with your @poly-ai.com account to continue</p>
+    <p>Sign in with your PolyAI Google account to continue</p>
     ${error === 'not_polyai' ? '<div class="error">Access denied — only @poly-ai.com accounts allowed.</div>' : ''}
     <a href="/auth/google" class="btn">
       <img src="https://www.google.com/favicon.ico" alt="Google"/>
