@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PolyAI — Polyscore Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3a;
+      --accent: #6c63ff;
+      --accent2: #00d4aa;
+      --text: #e2e8f0;
+      --muted: #8892a4;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --red: #ef4444;
+      --orange: #f97316;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .header h1 { font-size: 19px; font-weight: 700; letter-spacing: -0.3px; }
+    .header .subtitle { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* Date range toolbar */
+    .date-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .date-bar label { font-size: 12px; color: var(--muted); }
+    .date-bar input[type="date"] {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 12px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      color-scheme: dark;
+    }
+    .date-bar input[type="date"]:focus { border-color: var(--accent); }
+    .preset-btn {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 5px 14px;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .preset-btn:hover, .preset-btn.active {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .apply-btn {
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      padding: 8px 20px;
+      color: white;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .apply-btn:hover { opacity: 0.85; }
+    .apply-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .loading-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(15,17,23,0.75);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .loading-overlay.visible { display: flex; }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { color: var(--muted); font-size: 14px; }
+
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      padding: 24px 32px 0;
+    }
+    @media (max-width: 900px) { .stats-row { grid-template-columns: repeat(2,1fr); } }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .stat-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 6px; }
+    .stat-card .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    .content { padding: 24px 32px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    @media (max-width: 900px) { .content { grid-template-columns: 1fr; } }
+    .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .panel.full { grid-column: 1 / -1; }
+    .panel-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .panel-header h2 { font-size: 14px; font-weight: 600; }
+    .panel-header .hint { font-size: 11px; color: var(--muted); }
+    .chart-wrap { padding: 8px 16px 16px; height: 320px; }
+    .chart-wrap-tall { padding: 8px 16px 16px; height: 520px; }
+
+    /* Table */
+    .table-wrap { overflow-y: auto; max-height: 560px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th {
+      position: sticky; top: 0;
+      background: var(--surface);
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 11px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr:hover { background: rgba(255,255,255,0.03); }
+    tbody tr:last-child { border-bottom: none; }
+    td { padding: 10px 14px; }
+    .rank { color: var(--muted); font-size: 12px; width: 36px; }
+    .project-name { font-weight: 500; }
+    .account-name { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .score-cell { text-align: right; }
+    .score-pill {
+      display: inline-block; padding: 3px 10px;
+      border-radius: 20px; font-size: 12px; font-weight: 700;
+      min-width: 48px; text-align: center;
+    }
+    .score-bar-cell { width: 120px; }
+    .score-bar-wrap { background: rgba(255,255,255,0.05); border-radius: 4px; height: 6px; }
+    .score-bar { height: 6px; border-radius: 4px; }
+    .calls-cell { text-align: right; color: var(--muted); font-size: 12px; }
+
+    .toolbar {
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    }
+    .toolbar input {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 7px 12px;
+      color: var(--text); font-size: 13px; width: 220px; outline: none;
+    }
+    .toolbar input:focus { border-color: var(--accent); }
+    .toolbar select {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 7px 12px;
+      color: var(--text); font-size: 13px; outline: none;
+    }
+    .toolbar label { font-size: 12px; color: var(--muted); }
+
+    .tier-great { background: rgba(34,197,94,0.18); color: #4ade80; }
+    .tier-good  { background: rgba(0,212,170,0.15); color: #2dd4bf; }
+    .tier-avg   { background: rgba(234,179,8,0.15);  color: #facc15; }
+    .tier-low   { background: rgba(249,115,22,0.15); color: #fb923c; }
+    .tier-poor  { background: rgba(239,68,68,0.15);  color: #f87171; }
+    .bar-great { background: #22c55e; }
+    .bar-good  { background: #2dd4bf; }
+    .bar-avg   { background: #eab308; }
+    .bar-low   { background: #f97316; }
+    .bar-poor  { background: #ef4444; }
+
+    .empty-state { padding: 48px; text-align: center; color: var(--muted); font-size: 14px; }
+    footer { text-align: center; padding: 24px; font-size: 12px; color: var(--muted); }
+    .badge { background: var(--accent); color: white; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .error-banner {
+      background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 8px; padding: 12px 20px; margin: 16px 32px;
+      color: #f87171; font-size: 13px; display: none;
+    }
+  </style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text">Fetching from Datadog…</div>
+</div>
+
+<div class="header">
+  <div>
+    <h1>⚡ PolyAI — Polyscore Dashboard</h1>
+    <div class="subtitle" id="range-label">Loading…</div>
+  </div>
+  <span class="badge" id="total-badge">— projects</span>
+</div>
+
+<!-- Date range bar -->
+<div class="date-bar">
+  <label>Date range:</label>
+  <input type="date" id="date-from" />
+  <span style="color:var(--muted);font-size:13px">→</span>
+  <input type="date" id="date-to" />
+  <button class="preset-btn active" data-days="7">Last 7d</button>
+  <button class="preset-btn" data-days="14">14d</button>
+  <button class="preset-btn" data-days="30">30d</button>
+  <button class="preset-btn" data-days="90">90d</button>
+  <button class="apply-btn" id="apply-btn">Apply</button>
+</div>
+
+<div class="error-banner" id="error-banner"></div>
+
+<div class="stats-row">
+  <div class="stat-card">
+    <div class="label">Projects Tracked</div>
+    <div class="value" id="stat-projects">—</div>
+    <div class="sub">live calls in range</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Org Avg Polyscore</div>
+    <div class="value" id="stat-avg" style="color:var(--accent2)">—</div>
+    <div class="sub">call-weighted average</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Total Calls Scored</div>
+    <div class="value" id="stat-calls">—</div>
+    <div class="sub">with poly_score data</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">≥ 7.5 Score</div>
+    <div class="value" id="stat-high" style="color:var(--green)">—</div>
+    <div class="sub">projects performing well</div>
+  </div>
+</div>
+
+<div class="content">
+  <div class="panel full">
+    <div class="panel-header">
+      <h2>📊 All Projects — Avg Polyscore</h2>
+      <span class="hint">sorted high → low</span>
+    </div>
+    <div class="chart-wrap-tall"><canvas id="barChart"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <h2>🍩 Score Distribution</h2>
+      <span class="hint">by tier</span>
+    </div>
+    <div class="chart-wrap"><canvas id="donutChart"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <h2>🔵 Score vs Volume</h2>
+      <span class="hint">bubble = call count</span>
+    </div>
+    <div class="chart-wrap"><canvas id="scatterChart"></canvas></div>
+  </div>
+
+  <div class="panel full">
+    <div class="panel-header">
+      <h2>📋 Project Details</h2>
+      <span class="hint" id="table-count"></span>
+    </div>
+    <div class="toolbar">
+      <input type="text" id="search" placeholder="Search project / account…" />
+      <label>Min score:</label>
+      <select id="filter-score">
+        <option value="0">All</option>
+        <option value="7.5">≥ 7.5</option>
+        <option value="7">≥ 7.0</option>
+        <option value="6">≥ 6.0</option>
+        <option value="-1">< 7.0 (needs attention)</option>
+      </select>
+      <label>Sort:</label>
+      <select id="sort-by">
+        <option value="score-desc">Score ↓</option>
+        <option value="score-asc">Score ↑</option>
+        <option value="calls-desc">Calls ↓</option>
+        <option value="name-asc">Name A→Z</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="rank">#</th>
+            <th>Project</th>
+            <th class="score-cell">Avg Polyscore</th>
+            <th class="score-bar-cell"></th>
+            <th class="calls-cell">Calls</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<footer>⚡ EddyK · PolyAI · <span id="footer-ts"></span></footer>
+
+<script>
+// ── Charts (persistent references) ───────────────────────────────────────────
+let barChart, donutChart, scatterChart;
+let currentData = [];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function scoreTier(s) {
+  if (s >= 8)   return 'great';
+  if (s >= 7.5) return 'good';
+  if (s >= 7)   return 'avg';
+  if (s >= 6)   return 'low';
+  return 'poor';
+}
+function tierLabel(t) {
+  return {great:'≥ 8.0 Excellent',good:'7.5–8.0 Good',avg:'7.0–7.5 Average',low:'6.0–7.0 Below avg',poor:'< 6.0 Poor'}[t];
+}
+function scoreBg(s) {
+  return {great:'#22c55e',good:'#2dd4bf',avg:'#eab308',low:'#f97316',poor:'#ef4444'}[scoreTier(s)];
+}
+function fmtCalls(n) {
+  if (n >= 1000000) return (n/1000000).toFixed(1)+'M';
+  if (n >= 1000) return (n/1000).toFixed(1)+'k';
+  return n;
+}
+function isoDate(d) {
+  return d.toISOString().split('T')[0];
+}
+
+// ── Date presets ──────────────────────────────────────────────────────────────
+function setPreset(days) {
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate() - days);
+  document.getElementById('date-from').value = isoDate(from);
+  document.getElementById('date-to').value = isoDate(to);
+  document.querySelectorAll('.preset-btn').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.days) === days);
+  });
+}
+
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => setPreset(parseInt(btn.dataset.days)));
+});
+
+document.getElementById('date-from').addEventListener('change', () => {
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+});
+document.getElementById('date-to').addEventListener('change', () => {
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+});
+
+// ── Fetch data ────────────────────────────────────────────────────────────────
+async function fetchData() {
+  const fromVal = document.getElementById('date-from').value;
+  const toVal = document.getElementById('date-to').value;
+  if (!fromVal || !toVal) return;
+
+  const from = new Date(fromVal).toISOString();
+  const to = new Date(toVal + 'T23:59:59Z').toISOString();
+
+  document.getElementById('loading').classList.add('visible');
+  document.getElementById('apply-btn').disabled = true;
+  document.getElementById('error-banner').style.display = 'none';
+
+  try {
+    const res = await fetch(`/api/polyscores?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    currentData = data.results;
+    renderAll(currentData, fromVal, toVal);
+  } catch (e) {
+    const banner = document.getElementById('error-banner');
+    banner.textContent = '⚠️ Failed to fetch data: ' + e.message;
+    banner.style.display = 'block';
+  } finally {
+    document.getElementById('loading').classList.remove('visible');
+    document.getElementById('apply-btn').disabled = false;
+  }
+}
+
+document.getElementById('apply-btn').addEventListener('click', fetchData);
+
+// ── Render everything ─────────────────────────────────────────────────────────
+function renderAll(data, fromVal, toVal) {
+  // Header
+  const fmt = d => new Date(d).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'});
+  document.getElementById('range-label').textContent =
+    `Avg Polyscore per project · ${fmt(fromVal)} → ${fmt(toVal)} · Live calls only`;
+  document.getElementById('total-badge').textContent = data.length + ' projects';
+  document.getElementById('footer-ts').textContent = new Date().toLocaleString('en-GB');
+
+  // Stats
+  const totalCalls = data.reduce((a,b)=>a+b.calls,0);
+  const weightedScore = totalCalls > 0
+    ? data.reduce((a,b)=>a+b.score*b.calls,0)/totalCalls : 0;
+  const highProjects = data.filter(d=>d.score>=7.5).length;
+
+  document.getElementById('stat-projects').textContent = data.length;
+  document.getElementById('stat-avg').textContent = weightedScore.toFixed(2);
+  document.getElementById('stat-calls').textContent = fmtCalls(totalCalls);
+  document.getElementById('stat-high').textContent = highProjects;
+
+  renderBarChart(data);
+  renderDonutChart(data);
+  renderScatterChart(data);
+  applyTableFilters();
+}
+
+// ── Bar Chart ─────────────────────────────────────────────────────────────────
+function renderBarChart(data) {
+  const sorted = [...data].sort((a,b)=>b.score-a.score);
+  const labels = sorted.map(d => d.project.replace('-usp','').replace('PROJECT-','#'));
+  const values = sorted.map(d=>d.score);
+  const colors = sorted.map(d=>scoreBg(d.score));
+
+  if (barChart) {
+    barChart.data.labels = labels;
+    barChart.data.datasets[0].data = values;
+    barChart.data.datasets[0].backgroundColor = colors.map(c=>c+'cc');
+    barChart.data.datasets[0].borderColor = colors;
+    barChart.update();
+    return;
+  }
+
+  barChart = new Chart(document.getElementById('barChart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Avg Polyscore',
+        data: values,
+        backgroundColor: colors.map(c=>c+'cc'),
+        borderColor: colors,
+        borderWidth: 1,
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: {display:false},
+        tooltip: {
+          callbacks: {
+            title: (items) => sorted[items[0].dataIndex].project,
+            afterTitle: (items) => 'Account: '+sorted[items[0].dataIndex].account,
+            label: (item) => ` Score: ${item.raw.toFixed(2)}`,
+            afterLabel: (item) => ` Calls: ${fmtCalls(sorted[item.dataIndex].calls)}`
+          }
+        }
+      },
+      scales: {
+        x: { ticks:{color:'#6b7280',font:{size:9},maxRotation:60}, grid:{color:'rgba(255,255,255,0.04)'} },
+        y: { min:0, max:10.5, ticks:{color:'#6b7280',font:{size:11}}, grid:{color:'rgba(255,255,255,0.06)'} }
+      }
+    }
+  });
+}
+
+// ── Donut Chart ───────────────────────────────────────────────────────────────
+function renderDonutChart(data) {
+  const tiers = ['great','good','avg','low','poor'];
+  const counts = {};
+  tiers.forEach(t=>counts[t]=0);
+  data.forEach(d=>counts[scoreTier(d.score)]++);
+  const vals = tiers.map(t=>counts[t]);
+  const cols = {great:'#22c55e',good:'#2dd4bf',avg:'#eab308',low:'#f97316',poor:'#ef4444'};
+
+  if (donutChart) {
+    donutChart.data.datasets[0].data = vals;
+    donutChart.update();
+    return;
+  }
+
+  donutChart = new Chart(document.getElementById('donutChart').getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: tiers.map(tierLabel),
+      datasets: [{
+        data: vals,
+        backgroundColor: tiers.map(t=>cols[t]+'cc'),
+        borderColor: tiers.map(t=>cols[t]),
+        borderWidth: 1,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position:'right', labels:{color:'#94a3b8',font:{size:11},boxWidth:12,padding:12} },
+        tooltip: { callbacks: { label: (i) => ` ${i.label}: ${i.raw} projects` } }
+      }
+    }
+  });
+}
+
+// ── Scatter Chart ─────────────────────────────────────────────────────────────
+function renderScatterChart(data) {
+  const pts = data.map(d=>({
+    x: d.score,
+    y: d.calls,
+    r: Math.min(Math.max(Math.sqrt(d.calls)/8,3),30),
+    label: d.project
+  }));
+
+  if (scatterChart) {
+    scatterChart.data.datasets[0].data = pts;
+    scatterChart.data.datasets[0].backgroundColor = pts.map(p=>scoreBg(p.x)+'99');
+    scatterChart.data.datasets[0].borderColor = pts.map(p=>scoreBg(p.x));
+    scatterChart.update();
+    return;
+  }
+
+  scatterChart = new Chart(document.getElementById('scatterChart').getContext('2d'), {
+    type: 'bubble',
+    data: {
+      datasets: [{
+        data: pts,
+        backgroundColor: pts.map(p=>scoreBg(p.x)+'99'),
+        borderColor: pts.map(p=>scoreBg(p.x)),
+        borderWidth: 1,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: {display:false},
+        tooltip: {
+          callbacks: {
+            label: (item) => {
+              const d = pts[item.dataIndex];
+              return [d.label, `Score: ${d.x.toFixed(2)}`, `Calls: ${fmtCalls(d.y)}`];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          min:1, max:10.5,
+          title:{display:true,text:'Polyscore',color:'#6b7280'},
+          ticks:{color:'#6b7280'}, grid:{color:'rgba(255,255,255,0.05)'}
+        },
+        y: {
+          type:'logarithmic',
+          title:{display:true,text:'Calls (log)',color:'#6b7280'},
+          ticks:{color:'#6b7280',callback:(v)=>v>=1000?v/1000+'k':v},
+          grid:{color:'rgba(255,255,255,0.05)'}
+        }
+      }
+    }
+  });
+}
+
+// ── Table ─────────────────────────────────────────────────────────────────────
+function applyTableFilters() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const minScoreVal = document.getElementById('filter-score').value;
+  const sortBy = document.getElementById('sort-by').value;
+
+  let data = currentData.filter(d => {
+    const matchQ = !q || d.project.toLowerCase().includes(q) || d.account.toLowerCase().includes(q);
+    let matchScore = true;
+    if (minScoreVal === '-1') matchScore = d.score < 7;
+    else matchScore = d.score >= parseFloat(minScoreVal);
+    return matchQ && matchScore;
+  });
+
+  data = data.sort((a,b) => {
+    if (sortBy==='score-desc') return b.score-a.score;
+    if (sortBy==='score-asc') return a.score-b.score;
+    if (sortBy==='calls-desc') return b.calls-a.calls;
+    return a.project.localeCompare(b.project);
+  });
+
+  document.getElementById('table-count').textContent = data.length + ' projects';
+
+  const tbody = document.getElementById('table-body');
+  if (data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state">No projects match your filters</div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = data.map((d,i) => {
+    const tier = scoreTier(d.score);
+    const pct = (d.score/10)*100;
+    return `<tr>
+      <td class="rank">${i+1}</td>
+      <td>
+        <div class="project-name">${d.project}</div>
+        <div class="account-name">${d.account}</div>
+      </td>
+      <td class="score-cell">
+        <span class="score-pill tier-${tier}">${d.score.toFixed(2)}</span>
+      </td>
+      <td class="score-bar-cell">
+        <div class="score-bar-wrap">
+          <div class="score-bar bar-${tier}" style="width:${pct}%"></div>
+        </div>
+      </td>
+      <td class="calls-cell">${fmtCalls(d.calls)}</td>
+    </tr>`;
+  }).join('');
+}
+
+document.getElementById('search').addEventListener('input', applyTableFilters);
+document.getElementById('filter-score').addEventListener('change', applyTableFilters);
+document.getElementById('sort-by').addEventListener('change', applyTableFilters);
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+setPreset(7);
+fetchData();
+</script>
+</body>
+</html>
